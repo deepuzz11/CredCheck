@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+/*
+ * Scanner-console theme. Committed dark — no light-mode branch. Monospace
+ * throughout; status colors (ok/flag/unavailable) reuse the same hex values
+ * as the dataviz-validated status palette, which stay legible on a near-black
+ * surface (they were checked against a dark surface already — see
+ * ScoreBreakdownChart.tsx).
+ */
+
+:root {
+  color-scheme: dark;
+  --phosphor: #4ade80; /* emerald-400 — primary accent / "ok" */
+  --phosphor-dim: #4ade8099;
+  --amber: #fbbf24; /* "flag" */
+  --red: #f87171; /* "high risk" / errors */
+  --ink: #d8f3e2; /* primary text — faint green-white */
+  --ink-dim: #6b8577; /* secondary/muted text */
+  --bg: #05070a;
+  --panel: #0a0f0c;
+}
+
+* {
+  border-color: color-mix(in oklab, var(--phosphor) 25%, transparent);
+}
+
+body {
+  position: relative;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+}
+
+/* Subtle scanline + vignette texture over the whole app. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(ellipse 70% 50% at 50% 0%, rgba(74, 222, 128, 0.08), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 50% 100%, rgba(74, 222, 128, 0.05), transparent 60%),
+    var(--bg);
+}
+
+@keyframes scan-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-scan-sweep {
+  animation: scan-sweep 1.6s linear infinite;
+}
+
+@keyframes blink-cursor {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-blink {
+  animation: blink-cursor 1s step-start infinite;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--phosphor) 35%, transparent);
+  color: #04120a;
+}

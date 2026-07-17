@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsx -e ' *)",
+      "Bash(curl -s http://localhost:3000/api/report/__CMDSUB_OUTPUT__/pdf -o /tmp/report2.pdf -w 'HTTP %{http_code}\\\\n')",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s -X POST http://localhost:3000/api/report -H 'Content-Type: application/json' -d '{\"target\":\"moderation-test-store.com\",\"reason\":\"never delivered, ghosted after payment\"}' -o /tmp/rep.json -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/scan -H 'Content-Type: application/json' -d '{\"input\":\"moderation-test-store.com\"}' -o /tmp/pre.json -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(node -e \"const r=require\\('/tmp/pre.json'\\); const sr=r.signals.find\\(s=>s.signal_name==='scam_reports'\\); console.log\\('status:', sr.status, '| notes:', sr.notes\\);\")",
+      "Bash(curl -s -m 5 -o /dev/null -w \"final health: HTTP %{http_code}\\\\n\" http://localhost:3000/)"
+    ]
+  }
+}

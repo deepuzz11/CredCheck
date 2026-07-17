@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// One row per normalized target (domain / @handle / marketplace listing URL).
+/// Caches the full scan result JSON for 48h so identical lookups skip re-scanning.
+/// Also the backing store for shareable /report/[id] permalinks and /history.
+model ScanCache {
+  id            String   @id @default(cuid())
+  normalizedKey String   @unique
+  inputType     String
+  resultJson    Json
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime
+
+  @@index([expiresAt])
+  @@index([createdAt])
+}
+
+/// User-submitted scam reports. Unverified and crowd-sourced — kept separate
+/// from the curated local blocklist (scam-blocklist.json) and merged at read
+/// time in scamReports.ts, each surfaced with a distinct trust level.
+///
+/// Only `approved` reports count toward the scam_reports signal (see
+/// UserReportedSource in scamReports.ts) — anyone can submit one, but an
+/// unmoderated report can't flag a target on its own. Moderated via /admin.
+model ScamReport {
+  id         String           @id @default(cuid())
+  target     String
+  targetType String
+  reason     String?
+  status     ScamReportStatus @default(pending)
+  createdAt  DateTime         @default(now())
+
+  @@index([target])
+  @@index([status])
+}
+
+enum ScamReportStatus {
+  pending
+  approved
+  rejected
+}
