@@ -17,6 +17,7 @@ export interface ModuleInfo {
 export const MODULES: ModuleInfo[] = [
   { key: "domain_age", label: "Domain age & WHOIS", built: true, appliesTo: ["website", "marketplace"] },
   { key: "ssl_cert", label: "SSL certificate", built: true, appliesTo: ["website", "marketplace"] },
+  { key: "dns_health", label: "Email & DNS setup", built: true, appliesTo: ["website", "marketplace"] },
   { key: "site_fingerprint", label: "Site policies & contact info", built: true, appliesTo: ["website"] },
   { key: "contact_consistency", label: "Contact consistency", built: true, appliesTo: ["website"] },
   { key: "review_sentiment", label: "Review sentiment", built: true, appliesTo: ["website", "instagram", "marketplace"] },

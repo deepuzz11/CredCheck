@@ -12,22 +12,41 @@ const RISK_DOT: Record<string, string> = {
   high: "bg-red-400",
 };
 
-async function loadHistory() {
+const BANDS = ["trusted", "caution", "high"] as const;
+type Band = (typeof BANDS)[number];
+
+async function loadHistory(q: string, band: Band | null) {
   if (!process.env.DATABASE_URL) return { rows: [], dbConfigured: false as const };
   try {
+    // Text match happens in the DB; the verdict lives inside the result JSON,
+    // so filter that in JS over a wider window (fine at this scale).
     const rows = await prisma.scanCache.findMany({
+      where: q ? { normalizedKey: { contains: q, mode: "insensitive" } } : undefined,
       orderBy: { createdAt: "desc" },
-      take: 30,
+      take: band ? 200 : 30,
     });
-    return { rows, dbConfigured: true as const };
+    const filtered = band
+      ? rows
+          .filter((r) => (r.resultJson as unknown as ScanResult)?.score?.risk_band === band)
+          .slice(0, 30)
+      : rows;
+    return { rows: filtered, dbConfigured: true as const };
   } catch {
     return { rows: [], dbConfigured: true as const, error: true as const };
   }
 }
 
-export default async function HistoryPage() {
-  const { rows, dbConfigured, error } = await loadHistory();
+export default async function HistoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; band?: string }>;
+}) {
+  const sp = await searchParams;
+  const q = sp.q?.trim() ?? "";
+  const bandFilter = BANDS.includes(sp.band as Band) ? (sp.band as Band) : null;
+  const { rows, dbConfigured, error } = await loadHistory(q, bandFilter);
   const now = Date.now();
+  const filtering = Boolean(q || bandFilter);
 
   return (
     <main className="mx-auto max-w-3xl px-4 pb-16 pt-10 sm:pt-14">
@@ -42,6 +61,49 @@ export default async function HistoryPage() {
           Cached for 48h. Expired entries stay listed for reference but need a fresh scan to view.
         </p>
       </header>
+
+      {dbConfigured && (
+        <form method="get" className="mb-4 flex flex-wrap items-center gap-2 text-xs">
+          <div className="flex min-w-0 flex-1 items-center gap-2 border border-emerald-400/20 bg-black/40 px-3 py-2">
+            <span className="text-emerald-400/70" aria-hidden>
+              /
+            </span>
+            <input
+              type="text"
+              name="q"
+              defaultValue={q}
+              placeholder="filter by target…"
+              autoComplete="off"
+              spellCheck={false}
+              className="w-full min-w-0 bg-transparent text-emerald-100 outline-none placeholder:text-emerald-100/25"
+            />
+          </div>
+          <select
+            name="band"
+            defaultValue={bandFilter ?? ""}
+            className="border border-emerald-400/20 bg-black/40 px-2 py-2 text-emerald-100"
+          >
+            <option value="">all verdicts</option>
+            <option value="trusted">trusted</option>
+            <option value="caution">caution</option>
+            <option value="high">high risk</option>
+          </select>
+          <button
+            type="submit"
+            className="border border-emerald-400/30 px-3 py-2 text-emerald-300 transition hover:border-emerald-400/60 hover:bg-emerald-400/10"
+          >
+            [ filter ]
+          </button>
+          {filtering && (
+            <Link
+              href="/history"
+              className="border border-emerald-400/15 px-3 py-2 text-emerald-100/50 transition hover:border-emerald-400/40 hover:text-emerald-300"
+            >
+              [ clear ]
+            </Link>
+          )}
+        </form>
+      )}
 
       {!dbConfigured && (
         <Panel className="p-6 text-sm text-emerald-100/50">
@@ -59,11 +121,17 @@ export default async function HistoryPage() {
 
       {dbConfigured && !error && rows.length === 0 && (
         <Panel className="p-6 text-sm text-emerald-100/50">
-          No scans yet.{" "}
-          <Link href="/" className="text-emerald-400 underline">
-            Run one
-          </Link>
-          .
+          {filtering ? (
+            <>No scans match that filter.</>
+          ) : (
+            <>
+              No scans yet.{" "}
+              <Link href="/" className="text-emerald-400 underline">
+                Run one
+              </Link>
+              .
+            </>
+          )}
         </Panel>
       )}
 
@@ -74,10 +142,13 @@ export default async function HistoryPage() {
             const result = row.resultJson as unknown as ScanResult;
             const band = result?.score?.risk_band ?? "caution";
             const trustScore = result?.score?.trust_score;
+            // Rescan with what the user originally typed — the normalized key
+            // ("instagram:@x", "marketplace:https://…") isn't valid scanner input.
+            const rescanTarget = result?.input?.raw ?? row.normalizedKey;
             return (
               <li key={row.id}>
                 <Link
-                  href={expired ? `/?rescan=${encodeURIComponent(row.normalizedKey)}` : `/report/${row.id}`}
+                  href={expired ? `/?rescan=${encodeURIComponent(rescanTarget)}` : `/report/${row.id}`}
                   className="flex items-center gap-3 border border-emerald-400/15 bg-black/40 px-4 py-3 text-sm transition hover:border-emerald-400/50 hover:bg-emerald-400/5"
                 >
                   <span

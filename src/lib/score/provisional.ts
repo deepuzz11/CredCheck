@@ -52,8 +52,8 @@ export function scoreFromSignals(signals: SignalResult[]): ScoreResult {
   score = Math.max(0, Math.min(100, score));
 
   // Confidence scales with how many signals we could actually use.
-  // (With only WHOIS today this stays deliberately low.)
-  const confidence = Math.min(1, usable / 6);
+  // 7 = every non-synthesis module a website scan can run (see modules-manifest).
+  const confidence = Math.min(1, usable / 7);
 
   if (usable === 0) {
     bullets.push("No trust signals were available for this input yet.");

@@ -1,6 +1,7 @@
 import { detectAndNormalize, type NormalizedInput } from "@/lib/input/detect";
 import { checkDomainAge } from "@/lib/signals/whois";
 import { checkSslCertificate } from "@/lib/signals/ssl";
+import { checkDnsHealth } from "@/lib/signals/dnsHealth";
 import { fingerprintSite, type FingerprintData } from "@/lib/signals/fingerprint";
 import { checkContactConsistency } from "@/lib/signals/contactConsistency";
 import { checkReviewSentiment } from "@/lib/signals/reviewSentiment";
@@ -36,6 +37,7 @@ export async function runScan(rawInput: string): Promise<ScanResult> {
   if (input.domain) {
     jobs.push(checkDomainAge(input.domain));
     jobs.push(checkSslCertificate(input.domain));
+    jobs.push(checkDnsHealth(input.domain));
   }
 
   let fingerprintJob: Promise<SignalResult<FingerprintData>> | null = null;

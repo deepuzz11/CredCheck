@@ -30,12 +30,12 @@ function ScanApp() {
     const rescan = searchParams.get("rescan");
     if (rescan) {
       setInput(rescan);
-      runScan(rescan);
+      runScan(rescan, { force: searchParams.get("force") === "1" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function runScan(value: string) {
+  async function runScan(value: string, opts?: { force?: boolean }) {
     const trimmed = value.trim();
     if (!trimmed) return;
     setError(null);
@@ -57,7 +57,7 @@ function ScanApp() {
       const res = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: trimmed }),
+        body: JSON.stringify({ input: trimmed, force: opts?.force ?? false }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Scan failed.");
@@ -148,7 +148,10 @@ function ScanApp() {
 
       {result && !loading && (
         <div className="mt-6">
-          <ResultsView result={result} />
+          <ResultsView
+            result={result}
+            onRescan={() => runScan(result.input.raw, { force: true })}
+          />
         </div>
       )}
 

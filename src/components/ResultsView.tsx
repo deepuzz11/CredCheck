@@ -38,7 +38,15 @@ const STATUS_UI: Record<SignalStatus, { tag: string; text: string }> = {
   unavailable: { tag: "[--]", text: "text-emerald-100/30" },
 };
 
-export function ResultsView({ result }: { result: ScanResult }) {
+export function ResultsView({
+  result,
+  onRescan,
+}: {
+  result: ScanResult;
+  /** rerun the scan with the cache bypassed; when absent (e.g. on a shared
+   *  report page) the rescan button deep-links to the scanner instead */
+  onRescan?: () => void;
+}) {
   const { score, input, signals } = result;
   const ui = BAND_UI[score.risk_band];
 
@@ -109,6 +117,7 @@ export function ResultsView({ result }: { result: ScanResult }) {
         )}
 
         <div className="mt-4 flex flex-wrap gap-2">
+          {result.cached && <RescanButton raw={input.raw} onRescan={onRescan} />}
           {result.id && <CopyLinkButton id={result.id} />}
           {result.id && <BadgeEmbedButton normalizedKey={input.normalized} id={result.id} />}
           <ReportScamButton input={input} />
@@ -215,6 +224,19 @@ function TerminalButton({
     <button type="button" onClick={onClick} disabled={disabled} className={cls}>
       {children}
     </button>
+  );
+}
+
+function RescanButton({ raw, onRescan }: { raw: string; onRescan?: () => void }) {
+  const rescan =
+    onRescan ??
+    (() => {
+      window.location.href = `/?rescan=${encodeURIComponent(raw)}&force=1`;
+    });
+  return (
+    <TerminalButton onClick={rescan} tone="sky">
+      [ rescan fresh ↻ ]
+    </TerminalButton>
   );
 }
 

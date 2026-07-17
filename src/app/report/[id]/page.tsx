@@ -78,12 +78,18 @@ export default async function ReportPage({
         </span>
       </div>
       <ResultsView result={result} />
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap gap-2">
         <a
           href={`/api/report/${id}/pdf`}
           className="inline-flex items-center gap-1.5 border border-emerald-400/30 px-3 py-1.5 text-xs text-emerald-300 transition hover:border-emerald-400/60 hover:bg-emerald-400/10"
         >
           [ download pdf ↓ ]
+        </a>
+        <a
+          href={`/api/report/${id}/json`}
+          className="inline-flex items-center gap-1.5 border border-emerald-400/30 px-3 py-1.5 text-xs text-emerald-300 transition hover:border-emerald-400/60 hover:bg-emerald-400/10"
+        >
+          [ download json ↓ ]
         </a>
       </div>
       <footer className="mt-10">

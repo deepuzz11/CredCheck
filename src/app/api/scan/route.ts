@@ -13,6 +13,8 @@ export const dynamic = "force-dynamic";
 
 const BodySchema = z.object({
   input: z.string().min(1, "Input is required").max(2048),
+  /** true = bypass the 48h cache and scan fresh (the result still refreshes the cache) */
+  force: z.boolean().optional(),
 });
 
 export async function POST(request: Request) {
@@ -43,9 +45,11 @@ export async function POST(request: Request) {
   try {
     const normalized = detectAndNormalize(parsed.data.input);
 
-    const cached = await getCachedScan(normalized.normalized);
-    if (cached) {
-      return NextResponse.json({ ...cached, cached: true }, { status: 200 });
+    if (!parsed.data.force) {
+      const cached = await getCachedScan(normalized.normalized);
+      if (cached) {
+        return NextResponse.json({ ...cached, cached: true }, { status: 200 });
+      }
     }
 
     const result = await runScan(parsed.data.input);

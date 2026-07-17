@@ -25,6 +25,10 @@ single source decides the score.
 - [x] Embeddable trust badge — `/api/badge` (dynamic SVG)
 - [x] PDF export — a print-friendly report, one click from any permalink
 - [x] "Report a scam" — crowd-sourced, **moderated before it affects scoring** — `/admin`
+- [x] Email & DNS setup signal — MX / SPF / DMARC / nameservers via Node's resolver
+- [x] Force rescan — `force: true` on `/api/scan` bypasses the 48h cache; "[ rescan fresh ]" button on any cached result
+- [x] Raw JSON export — `/api/report/[id]/json`, next to the PDF download
+- [x] History search & verdict filter — `/history?q=…&band=…` (works without JS)
 
 Every module degrades gracefully: if a data source fails or is unreachable,
 the scan still completes with a lower-confidence score instead of crashing.
@@ -79,6 +83,7 @@ it if you hit `Cannot find module './NNN.js'`.
 | Framework             | Next.js (App Router) + Tailwind    | free/OSS           |
 | WHOIS / domain age    | `whoiser` (direct WHOIS/RDAP)      | free, no key       |
 | SSL cert              | Node `tls` + crt.sh CT log search  | free, no key       |
+| Email/DNS setup       | Node `dns` (MX/SPF/DMARC/NS)       | free, no key       |
 | Site fingerprinting   | Playwright (headless Chromium)     | free/OSS           |
 | Review sentiment      | `sentiment` (AFINN wordlist)       | free/OSS, no key   |
 | Scam-report check     | curated JSON list + moderated user reports | free (stub) |
@@ -120,15 +125,16 @@ terminal — screen experience and document deliverable are different mediums.
 src/
   app/
     page.tsx                    # input UI + live checklist + results view
-    history/page.tsx            # recent scans (server component, direct Prisma read)
+    history/page.tsx            # recent scans + search/verdict filter (server component)
     compare/page.tsx            # side-by-side comparison (2-3 targets)
     report/[id]/page.tsx        # shareable permalink; ?print=1 renders PrintableReport
     admin/page.tsx              # scam-report moderation queue (password-gated)
     api/
-      scan/route.ts             # POST /api/scan — rate limit, cache, orchestrate, respond
+      scan/route.ts             # POST /api/scan — rate limit, cache (bypassable via force:true), orchestrate
       report/route.ts           # POST /api/report — submit a crowd-sourced scam report
       badge/route.ts            # GET /api/badge?key=… — dynamic SVG trust badge
       report/[id]/pdf/route.ts  # GET — renders ?print=1 with Playwright, returns a PDF
+      report/[id]/json/route.ts # GET — the raw ScanResult as a JSON download
       admin/login/route.ts      # POST — password → HMAC session cookie
       admin/logout/route.ts
       admin/reports/[id]/route.ts  # POST — approve/reject a pending report
@@ -145,6 +151,7 @@ src/
       types.ts                  # SignalResult contract + runSignal() failure isolation
       whois.ts                  # step 2: domain age + WHOIS
       ssl.ts                    # step 3: SSL cert (tls handshake + crt.sh)
+      dnsHealth.ts              # email & DNS setup (MX / SPF / DMARC / NS)
       fingerprint.ts            # step 4: Playwright site fingerprinting
       contactConsistency.ts     # step 5: email-domain vs site-domain check
       reviewSentiment.ts        # step 6: sentiment + uniform-rating detection
@@ -193,7 +200,9 @@ the scan.
 ### Caching, permalinks, history, badges & rate limiting
 
 - Results are cached in Postgres keyed by the normalized input (`ScanCache.normalizedKey`),
-  TTL 48h. Caching is optional infrastructure: without `DATABASE_URL`, or if the
+  TTL 48h. Pass `"force": true` to `/api/scan` (or use the "[ rescan fresh ]"
+  button any cached result shows) to bypass the cache and scan fresh — the new
+  result still refreshes the cache row, so permalinks and badges pick it up. Caching is optional infrastructure: without `DATABASE_URL`, or if the
   DB is unreachable, everything that depends on it (cache, `/history`, `/report/[id]`,
   `/api/badge`, scam reporting, admin) fails soft rather than crashing.
 - Each cache row's `id` powers the `/report/[id]` shareable permalink and the
@@ -234,6 +243,14 @@ hidden via a scoped `<style>` tag — and returns `page.pdf()` as a download.
 curl -s -X POST http://localhost:3000/api/scan \
   -H 'Content-Type: application/json' \
   -d '{"input":"github.com"}' | jq
+
+# bypass the 48h cache:
+curl -s -X POST http://localhost:3000/api/scan \
+  -H 'Content-Type: application/json' \
+  -d '{"input":"github.com","force":true}' | jq
+
+# raw JSON export of a saved report (id comes back from /api/scan):
+curl -s http://localhost:3000/api/report/<id>/json | jq
 
 curl -s -X POST http://localhost:3000/api/report \
   -H 'Content-Type: application/json' \
