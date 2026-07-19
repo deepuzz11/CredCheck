@@ -22,6 +22,23 @@ model ScanCache {
   @@index([createdAt])
 }
 
+/// One slim row per completed scan (including force-rescans). The cache keeps
+/// only the LATEST full result per target; this table keeps the score
+/// timeline that powers trend sparklines, "score changed since last scan"
+/// deltas, and the scans-per-day chart on /stats.
+model ScanHistory {
+  id            String   @id @default(cuid())
+  normalizedKey String
+  inputType     String
+  trustScore    Int
+  riskBand      String
+  confidence    Float
+  createdAt     DateTime @default(now())
+
+  @@index([normalizedKey, createdAt])
+  @@index([createdAt])
+}
+
 /// User-submitted scam reports. Unverified and crowd-sourced — kept separate
 /// from the curated local blocklist (scam-blocklist.json) and merged at read
 /// time in scamReports.ts, each surfaced with a distinct trust level.

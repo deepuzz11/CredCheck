@@ -50,16 +50,42 @@ interface Stats {
   avgScore: number;
   bins: number[]; // 10 bins: 0–9 … 90–100
   reportCounts: { approved: number; pending: number };
+  /** scans per day, oldest → newest, one entry per day incl. zero days */
+  daily: Array<{ day: string; count: number }>;
 }
+
+const DAILY_DAYS = 14;
 
 async function loadStats(): Promise<Stats | null> {
   if (!process.env.DATABASE_URL) return null;
   try {
-    const [totalScans, rows, reports] = await Promise.all([
+    // All bucketing in UTC — labels come from toISOString, so the window
+    // boundary must too, or today's scans can fall outside every bucket.
+    const now = new Date();
+    const dailyFrom = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (DAILY_DAYS - 1)),
+    );
+
+    const [totalScans, rows, reports, historyRows] = await Promise.all([
       prisma.scanCache.count(),
       prisma.scanCache.findMany({ orderBy: { createdAt: "desc" }, take: 500 }),
       prisma.scamReport.groupBy({ by: ["status"], _count: true }),
+      prisma.scanHistory.findMany({
+        where: { createdAt: { gte: dailyFrom } },
+        select: { createdAt: true },
+      }),
     ]);
+
+    const daily: Array<{ day: string; count: number }> = [];
+    for (let i = 0; i < DAILY_DAYS; i++) {
+      const d = new Date(dailyFrom.getTime() + i * 86_400_000);
+      daily.push({ day: d.toISOString().slice(0, 10), count: 0 });
+    }
+    for (const h of historyRows) {
+      const key = h.createdAt.toISOString().slice(0, 10);
+      const bucket = daily.find((b) => b.day === key);
+      if (bucket) bucket.count += 1;
+    }
 
     const sample: StatsRow[] = [];
     for (const row of rows) {
@@ -99,6 +125,7 @@ async function loadStats(): Promise<Stats | null> {
       avgScore: sample.length ? Math.round(scoreSum / sample.length) : 0,
       bins,
       reportCounts,
+      daily,
     };
   } catch (err) {
     console.warn("[/stats] load failed:", err instanceof Error ? err.message : err);
@@ -154,6 +181,13 @@ export default async function StatsPage() {
           <Panel label="score distribution" className="p-6">
             <Histogram bins={stats.bins} />
           </Panel>
+
+          {/* Activity over time */}
+          {stats.daily.some((d) => d.count > 0) && (
+            <Panel label="activity" className="p-6">
+              <DailyBars daily={stats.daily} />
+            </Panel>
+          )}
 
           {/* Watchlist + latest */}
           <div className="grid gap-4 sm:grid-cols-2">
@@ -283,6 +317,58 @@ function Histogram({ bins }: { bins: number[] }) {
                 {i * 10}–{i === 9 ? 100 : i * 10 + 9}
               </td>
               <td>{count}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DailyBars({ daily }: { daily: Array<{ day: string; count: number }> }) {
+  const max = Math.max(...daily.map((d) => d.count), 1);
+  const peak = daily.reduce((p, d) => (d.count > p.count ? d : p), daily[0]);
+  return (
+    <div>
+      <div className="flex h-20 items-end border-b border-emerald-400/20" style={{ gap: "2px" }}>
+        {daily.map((d) => (
+          <div
+            key={d.day}
+            className="relative flex-1"
+            title={`${d.day}: ${d.count} scan${d.count === 1 ? "" : "s"}`}
+          >
+            {d.day === peak.day && d.count > 0 && (
+              <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] tabular-nums text-emerald-100/60">
+                {d.count}
+              </span>
+            )}
+            <div
+              className="w-full bg-emerald-400/80"
+              style={{ height: `${Math.max(d.count > 0 ? 3 : 0, (d.count / max) * 72)}px` }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] tabular-nums text-emerald-100/30">
+        <span>{daily[0]?.day.slice(5)}</span>
+        <span>{daily[daily.length - 1]?.day.slice(5)}</span>
+      </div>
+      <p className="mt-1.5 text-[10px] text-emerald-100/40">
+        scans per day, last {daily.length} days (every scan counts, including rescans)
+      </p>
+      <table className="sr-only">
+        <caption>Scans per day over the last {daily.length} days</caption>
+        <thead>
+          <tr>
+            <th scope="col">Day</th>
+            <th scope="col">Scans</th>
+          </tr>
+        </thead>
+        <tbody>
+          {daily.map((d) => (
+            <tr key={d.day}>
+              <td>{d.day}</td>
+              <td>{d.count}</td>
             </tr>
           ))}
         </tbody>

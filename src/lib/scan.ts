@@ -32,6 +32,11 @@ export interface ScanResult {
   /** JPEG thumbnail of the homepage at scan time (websites only) — lifted out
    *  of the fingerprint signal so the LLM prompt never carries the blob */
   screenshot_data_url?: string | null;
+  /** the immediately preceding scan of this target, when history is enabled —
+   *  powers the "score changed since last scan" delta chip */
+  previous?: { trust_score: number; risk_band: string; scanned_at: string } | null;
+  /** recent score timeline (oldest → newest, this scan last) — the sparkline */
+  trend?: number[];
   /** true when served from the 48h cache instead of freshly scanned */
   cached: boolean;
   /** cache row id — present only when caching is enabled; powers /report/[id] permalinks */

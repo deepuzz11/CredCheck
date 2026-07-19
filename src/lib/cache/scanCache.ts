@@ -31,7 +31,19 @@ export async function getCachedScan(normalizedKey: string): Promise<ScanResult |
   }
 }
 
-/** Returns the cache row's id (for permalinks), or null if caching is unavailable. */
+/** How many past scores back the trend sparkline reaches. */
+const TREND_LIMIT = 12;
+
+/**
+ * Persist a completed scan: append a slim ScanHistory row (the timeline),
+ * then upsert the full result into the cache (the latest snapshot).
+ *
+ * Before writing, it reads the previous history row and score timeline and
+ * mutates `result` with `previous` + `trend` — so the delta chip and the
+ * sparkline are baked into the stored JSON, consistent with the scan's own
+ * point in time. Returns the cache row's id (for permalinks), or null when
+ * persistence is unavailable.
+ */
 export async function setCachedScan(
   normalizedKey: string,
   inputType: string,
@@ -39,6 +51,31 @@ export async function setCachedScan(
 ): Promise<string | null> {
   if (!process.env.DATABASE_URL) return null;
   try {
+    const past = await prisma.scanHistory.findMany({
+      where: { normalizedKey },
+      orderBy: { createdAt: "desc" },
+      take: TREND_LIMIT - 1,
+    });
+    const latest = past[0];
+    result.previous = latest
+      ? {
+          trust_score: latest.trustScore,
+          risk_band: latest.riskBand,
+          scanned_at: latest.createdAt.toISOString(),
+        }
+      : null;
+    result.trend = [...past.map((h) => h.trustScore).reverse(), result.score.trust_score];
+
+    await prisma.scanHistory.create({
+      data: {
+        normalizedKey,
+        inputType,
+        trustScore: result.score.trust_score,
+        riskBand: result.score.risk_band,
+        confidence: result.score.confidence,
+      },
+    });
+
     const expiresAt = new Date(Date.now() + TTL_MS);
     const resultJson = result as unknown as Prisma.InputJsonValue;
     const row = await prisma.scanCache.upsert({

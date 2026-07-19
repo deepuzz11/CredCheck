@@ -64,6 +64,10 @@ single source decides the score.
 - [x] Share-intent links on reports (WhatsApp / Telegram / X — plain URLs, no SDKs,
       no tracking), cache-age chip (`[cached · 3h ago]`), `[?]` on every signal row
       linking to its methodology on `/about`, and themed 404 / error pages
+- [x] **Score history over time** — every scan (including rescans) appends a slim
+      `ScanHistory` row; the verdict card shows a **trend sparkline** (last 12 scans)
+      and a **Δ delta chip** vs the previous scan ("Δ +12 vs 2d ago"), and `/stats`
+      gains a scans-per-day activity chart
 
 Every module degrades gracefully: if a data source fails or is unreachable,
 the scan still completes with a lower-confidence score instead of crashing.
@@ -87,7 +91,13 @@ deterministic rule-based scorer. Optional enhancements:
 # (recommended — a full scan takes several seconds):
 cp .env.example .env.local
 npm run db:up        # starts Postgres via docker-compose
-npm run db:migrate   # creates the ScanCache + ScamReport tables
+npm run db:migrate   # creates the ScanCache + ScanHistory + ScamReport tables
+
+# No Docker? Homebrew Postgres works identically:
+#   brew install postgresql@17 && brew services start postgresql@17
+#   createuser -s credcheck && psql -d postgres -c "ALTER USER credcheck PASSWORD 'credcheck';"
+#   createdb -O credcheck credcheck
+#   (prisma CLI reads .env, Next reads .env.local — put DATABASE_URL in both)
 
 # Enable the /admin moderation queue:
 #   in .env.local: ADMIN_PASSWORD=<pick something>
@@ -218,14 +228,14 @@ src/
       anthropicProvider.ts       # optional paid path
       synthesize.ts              # step 8 entry point — picks provider, falls back safely
     score/provisional.ts        # rule-based scorer (also the LLM fallback)
-    cache/scanCache.ts          # 48h Postgres cache; also backs /history, /report/[id], /api/badge
+    cache/scanCache.ts          # 48h Postgres cache + ScanHistory timeline (trend/delta); backs /history, /report/[id], /api/badge
     auth/adminSession.ts        # stateless HMAC admin session (no session DB)
     reportLookup.ts             # shared cache-row lookup (report page + PDF route)
     rateLimit.ts                 # in-memory per-IP rate limiter (namespaced per route)
     streamScan.ts                # client NDJSON parser for /api/scan/stream (home + batch)
     scan.ts                      # orchestrator: runs signals in parallel, then synthesizes
     modules-manifest.ts          # which modules exist + what input types they apply to
-prisma/schema.prisma            # ScanCache + ScamReport (with moderation status) models
+prisma/schema.prisma            # ScanCache + ScanHistory + ScamReport (with moderation) models
 docker-compose.yml              # local Postgres for development
 ```
 

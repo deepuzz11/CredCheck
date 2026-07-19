@@ -39,6 +39,65 @@ const STATUS_UI: Record<SignalStatus, { tag: string; text: string }> = {
   unavailable: { tag: "[--]", text: "text-emerald-100/30" },
 };
 
+/** Score movement since the previous scan of the same target. */
+function DeltaChip({
+  current,
+  previous,
+  since,
+}: {
+  current: number;
+  previous: number;
+  since: string;
+}) {
+  const delta = current - previous;
+  const cls =
+    delta > 0
+      ? "border-emerald-400/40 text-emerald-300"
+      : delta < 0
+        ? "border-red-400/40 text-red-300"
+        : "border-emerald-400/20 text-emerald-100/40";
+  const sign = delta > 0 ? "+" : "";
+  return (
+    <span
+      className={`border px-1.5 py-0.5 ${cls}`}
+      title={`Previous scan scored ${previous}/100`}
+    >
+      Δ {sign}
+      {delta} vs {relativeAge(since)}
+    </span>
+  );
+}
+
+/** Tiny single-series line of past trust scores (oldest → newest). Fixed
+ *  0–100 domain so the same shape always means the same movement. */
+function TrendSparkline({ trend }: { trend: number[] }) {
+  const W = 96;
+  const H = 22;
+  const PAD = 2;
+  const step = (W - PAD * 2) / (trend.length - 1);
+  const y = (v: number) => PAD + (1 - v / 100) * (H - PAD * 2);
+  const points = trend.map((v, i) => `${PAD + i * step},${y(v).toFixed(1)}`).join(" ");
+  const last = trend[trend.length - 1];
+  return (
+    <svg
+      width={W}
+      height={H}
+      viewBox={`0 0 ${W} ${H}`}
+      role="img"
+      aria-label={`Trust score over the last ${trend.length} scans: ${trend.join(", ")}`}
+      className="shrink-0 text-emerald-400/80"
+    >
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <circle
+        cx={PAD + (trend.length - 1) * step}
+        cy={y(last)}
+        r="2"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 /** "just now" / "5m ago" / "3h ago" / "2d ago" — how stale a cached result is. */
 function relativeAge(iso: string): string {
   const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000));
@@ -117,6 +176,13 @@ export function ResultsView({
                   [cached · {relativeAge(result.scanned_at)}]
                 </span>
               )}
+              {result.previous && (
+                <DeltaChip
+                  current={score.trust_score}
+                  previous={result.previous.trust_score}
+                  since={result.previous.scanned_at}
+                />
+              )}
             </div>
             {/* Confidence */}
             <div className="mt-3">
@@ -131,6 +197,14 @@ export function ResultsView({
                 />
               </div>
             </div>
+            {result.trend && result.trend.length >= 2 && (
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="text-[10px] uppercase tracking-wider text-emerald-100/40">
+                  score trend · {result.trend.length} scans
+                </span>
+                <TrendSparkline trend={result.trend} />
+              </div>
+            )}
           </div>
         </div>
 
