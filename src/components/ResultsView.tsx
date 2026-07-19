@@ -39,6 +39,15 @@ const STATUS_UI: Record<SignalStatus, { tag: string; text: string }> = {
   unavailable: { tag: "[--]", text: "text-emerald-100/30" },
 };
 
+/** "just now" / "5m ago" / "3h ago" / "2d ago" — how stale a cached result is. */
+function relativeAge(iso: string): string {
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  if (mins < 48 * 60) return `${Math.floor(mins / 60)}h ago`;
+  return `${Math.floor(mins / (24 * 60))}d ago`;
+}
+
 /** Counts 0 → target with an ease-out curve, giving the score reveal a
  *  spin-up feel. Skipped entirely for prefers-reduced-motion users. */
 function useCountUp(target: number, durationMs = 900): number {
@@ -105,7 +114,7 @@ export function ResultsView({
               </span>
               {result.cached && (
                 <span className="border border-sky-400/40 px-1.5 py-0.5 text-sky-300">
-                  [cached]
+                  [cached · {relativeAge(result.scanned_at)}]
                 </span>
               )}
             </div>
@@ -230,6 +239,14 @@ function SignalRow({ signal }: { signal: SignalResult }) {
               </span>
             )}
             {hasData && <span className="text-xs text-emerald-100/30">[details]</span>}
+            <a
+              href="/about#signals"
+              title="How this check works"
+              onClick={(e) => e.stopPropagation()}
+              className="text-xs text-emerald-100/25 transition hover:text-emerald-300"
+            >
+              [?]
+            </a>
           </span>
         </summary>
         {hasData && (

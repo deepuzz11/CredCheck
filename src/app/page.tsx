@@ -10,11 +10,10 @@ import { ResultsView } from "@/components/ResultsView";
 import { RecentScans } from "@/components/RecentScans";
 import { WatchlistPanel } from "@/components/WatchlistPanel";
 import { updateWatch } from "@/lib/watchlist";
+import { streamScan, type ScanPhase } from "@/lib/streamScan";
 import { Panel } from "@/components/Panel";
 
 const EXAMPLES = ["example.com", "@nike", "amazon.com/dp/B08N5WRWNW"];
-
-type ScanPhase = "signals" | "synthesizing";
 
 export default function Home() {
   return (
@@ -78,49 +77,13 @@ function ScanApp() {
     setLoadingType(detected);
     setLoading(true);
     try {
-      const res = await fetch("/api/scan/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: trimmed, force: opts?.force ?? false }),
+      // Each signal flips its checklist row live the moment it settles
+      // server-side — see lib/streamScan.ts for the NDJSON contract.
+      const finalResult = await streamScan(trimmed, {
+        force: opts?.force ?? false,
+        onSignal: (r) => setLive((m) => ({ ...m, [r.signal_name]: r })),
+        onPhase: setPhase,
       });
-      if (!res.ok || !res.body) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(
-          (json as { error?: string }).error ?? "Scan failed.",
-        );
-      }
-
-      // The response is NDJSON — parse each line as it arrives so every
-      // signal flips its row live the moment it settles server-side.
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let finalResult: ScanResult | null = null;
-      for (;;) {
-        const { done, value: chunk } = await reader.read();
-        buffer += decoder.decode(chunk, { stream: !done });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const ev = JSON.parse(line) as
-            | { type: "signal"; result: SignalResult }
-            | { type: "phase"; phase: ScanPhase }
-            | { type: "done"; result: ScanResult }
-            | { type: "error"; message: string };
-          if (ev.type === "signal") {
-            setLive((m) => ({ ...m, [ev.result.signal_name]: ev.result }));
-          } else if (ev.type === "phase") {
-            setPhase(ev.phase);
-          } else if (ev.type === "done") {
-            finalResult = ev.result;
-          } else {
-            throw new Error(ev.message);
-          }
-        }
-        if (done) break;
-      }
-      if (!finalResult) throw new Error("The scan stream ended unexpectedly.");
       setResult(finalResult);
       // Keep the watchlist snapshot fresh if this target is on it.
       updateWatch(finalResult.input.normalized, {
@@ -209,6 +172,12 @@ function ScanApp() {
                 {ex}
               </button>
             ))}
+            <a
+              href="/batch"
+              className="ml-auto text-emerald-400/60 transition hover:text-emerald-300"
+            >
+              comparing several? batch mode →
+            </a>
           </div>
         </form>
       </Panel>

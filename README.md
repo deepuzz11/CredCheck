@@ -58,6 +58,12 @@ single source decides the score.
       limitations* section, and free-API quick docs with a curl example
 - [x] App identity — terminal-reticle SVG favicon, PWA manifest, `robots.txt` +
       `sitemap.xml`, theme color; plus a once-per-session boot line on the home page
+- [x] **Batch mode** — `/batch`: paste up to 5 targets (one per line), scanned
+      sequentially with live per-row check progress, ranked in one table with a
+      highest/lowest summary — fits inside the per-IP rate limit by design
+- [x] Share-intent links on reports (WhatsApp / Telegram / X — plain URLs, no SDKs,
+      no tracking), cache-age chip (`[cached · 3h ago]`), `[?]` on every signal row
+      linking to its methodology on `/about`, and themed 404 / error pages
 
 Every module degrades gracefully: if a data source fails or is unreachable,
 the scan still completes with a lower-confidence score instead of crashing.
@@ -161,6 +167,8 @@ src/
     compare/page.tsx            # side-by-side comparison (2-3 targets)
     stats/page.tsx              # public dashboard: verdict distribution, histogram, watchlist
     about/page.tsx              # methodology: signals, score bands, limitations, API docs
+    batch/page.tsx              # batch mode: up to 5 targets, sequential, ranked table
+    not-found.tsx / error.tsx   # themed 404 + runtime-fault pages
     icon.svg / manifest.ts / robots.ts / sitemap.ts  # favicon, PWA manifest, SEO plumbing
     report/[id]/page.tsx        # shareable permalink; ?print=1 renders PrintableReport
     report/[id]/opengraph-image.tsx  # dynamic OG share card (next/og)
@@ -181,6 +189,7 @@ src/
     Header.tsx                   # terminal titlebar nav
     RecentScans.tsx              # home-page latest-scans strip (renders nothing w/o cache)
     WatchlistPanel.tsx           # localStorage watchlist panel (see lib/watchlist.ts)
+    ShareLinks.tsx               # WhatsApp/Telegram/X share-intent links (no SDKs)
     ResultsView.tsx               # score card, breakdown chart, signals, copy-link, badge, report form
     ScoreBreakdownChart.tsx      # status-composition bar (see Design above)
     PrintableReport.tsx          # light print/PDF document (distinct from the screen theme)
@@ -213,6 +222,7 @@ src/
     auth/adminSession.ts        # stateless HMAC admin session (no session DB)
     reportLookup.ts             # shared cache-row lookup (report page + PDF route)
     rateLimit.ts                 # in-memory per-IP rate limiter (namespaced per route)
+    streamScan.ts                # client NDJSON parser for /api/scan/stream (home + batch)
     scan.ts                      # orchestrator: runs signals in parallel, then synthesizes
     modules-manifest.ts          # which modules exist + what input types they apply to
 prisma/schema.prisma            # ScanCache + ScamReport (with moderation status) models

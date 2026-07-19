@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import type { ScanResult } from "@/lib/scan";
 import { loadReportRow } from "@/lib/reportLookup";
 import { ResultsView } from "@/components/ResultsView";
+import { ShareLinks } from "@/components/ShareLinks";
 import { Panel } from "@/components/Panel";
 import { PrintableReport } from "@/components/PrintableReport";
 
@@ -109,6 +110,9 @@ export default async function ReportPage({
         >
           [ download json ↓ ]
         </a>
+        <ShareLinks
+          summary={`CredCheck: ${result.input.normalized} scored ${result.score.trust_score}/100`}
+        />
       </div>
       <footer className="mt-10">
         <Panel className="px-4 py-3 text-center text-xs leading-relaxed text-emerald-100/40">

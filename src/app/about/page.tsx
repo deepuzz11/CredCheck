@@ -81,7 +81,7 @@ export default function AboutPage() {
       </header>
 
       <div className="space-y-4">
-        <Panel label="the signals" className="p-6">
+        <Panel label="the signals" id="signals" className="scroll-mt-20 p-6">
           <ul className="space-y-3.5">
             {SIGNALS.map((s, i) => (
               <li key={s.name} className="flex gap-3 text-sm">
