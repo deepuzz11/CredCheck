@@ -8,6 +8,8 @@ import { MODULES } from "@/lib/modules-manifest";
 import { detectAndNormalize, type InputType } from "@/lib/input/detect";
 import { ResultsView } from "@/components/ResultsView";
 import { RecentScans } from "@/components/RecentScans";
+import { WatchlistPanel } from "@/components/WatchlistPanel";
+import { updateWatch } from "@/lib/watchlist";
 import { Panel } from "@/components/Panel";
 
 const EXAMPLES = ["example.com", "@nike", "amazon.com/dp/B08N5WRWNW"];
@@ -120,6 +122,13 @@ function ScanApp() {
       }
       if (!finalResult) throw new Error("The scan stream ended unexpectedly.");
       setResult(finalResult);
+      // Keep the watchlist snapshot fresh if this target is on it.
+      updateWatch(finalResult.input.normalized, {
+        raw: finalResult.input.raw,
+        score: finalResult.score.trust_score,
+        band: finalResult.score.risk_band,
+        scanned_at: finalResult.scanned_at,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
@@ -130,6 +139,7 @@ function ScanApp() {
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col px-4 pb-16 pt-10 sm:pt-14">
       <header className="mb-8 text-center">
+        <BootSequence />
         <p className="mb-3 text-xs uppercase tracking-[0.2em] text-emerald-400/60">
           // multi-signal trust scanner
         </p>
@@ -222,7 +232,17 @@ function ScanApp() {
         </div>
       )}
 
-      {!loading && !result && <RecentScans />}
+      {!loading && !result && (
+        <>
+          <WatchlistPanel
+            onRescan={(raw) => {
+              setInput(raw);
+              runScan(raw, { force: true });
+            }}
+          />
+          <RecentScans />
+        </>
+      )}
 
       <footer className="mt-10">
         <Panel className="px-4 py-3 text-center text-xs leading-relaxed text-emerald-100/40">
@@ -233,6 +253,41 @@ function ScanApp() {
         </Panel>
       </footer>
     </main>
+  );
+}
+
+/** One-time-per-session boot line, typed out terminal-style. Repeat visits
+ *  (and reduced-motion users) get the finished line with no animation, so
+ *  layout is identical either way. */
+function BootSequence() {
+  const signalCount = MODULES.filter((m) => m.built && m.key !== "llm_synthesis").length;
+  const full = `> init credcheck :: ${signalCount} signal modules loaded :: ready`;
+  const [text, setText] = useState(full);
+
+  useEffect(() => {
+    let fresh = false;
+    try {
+      fresh = !window.sessionStorage.getItem("credcheck.booted");
+      if (fresh) window.sessionStorage.setItem("credcheck.booted", "1");
+    } catch {
+      /* storage disabled — skip the animation */
+    }
+    if (!fresh || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    setText("");
+    let i = 0;
+    const t = setInterval(() => {
+      i += 2;
+      setText(full.slice(0, i));
+      if (i >= full.length) clearInterval(t);
+    }, 18);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <p className="mb-4 h-4 text-[11px] text-emerald-400/40" aria-hidden>
+      {text}
+    </p>
   );
 }
 

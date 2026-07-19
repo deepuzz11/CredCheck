@@ -13,7 +13,7 @@ export function Header() {
             <span className="h-2.5 w-2.5 rounded-full bg-amber-500/70" />
             <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
           </span>
-          <span className="text-emerald-400 [text-shadow:0_0_10px_rgba(74,222,128,0.5)]">
+          <span className="hidden text-emerald-400 [text-shadow:0_0_10px_rgba(74,222,128,0.5)] sm:inline">
             credcheck<span className="text-emerald-400/50">://</span>scan
           </span>
         </Link>
@@ -29,6 +29,9 @@ export function Header() {
           </Link>
           <Link href="/stats" className="transition hover:text-emerald-300">
             [ stats ]
+          </Link>
+          <Link href="/about" className="transition hover:text-emerald-300">
+            [ about ]
           </Link>
         </nav>
       </div>

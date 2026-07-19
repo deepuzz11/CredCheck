@@ -7,6 +7,7 @@ import { checkContactConsistency } from "@/lib/signals/contactConsistency";
 import { checkReviewSentiment } from "@/lib/signals/reviewSentiment";
 import { checkScamReports } from "@/lib/signals/scamReports";
 import { checkLookalikeDomain, checkLookalikeHandle } from "@/lib/signals/lookalike";
+import { checkRedirectChain } from "@/lib/signals/redirects";
 import type { SignalResult } from "@/lib/signals/types";
 import type { ScoreResult } from "@/lib/score/provisional";
 import { synthesizeScore } from "@/lib/llm/synthesize";
@@ -73,6 +74,7 @@ export async function runScan(rawInput: string, opts: RunScanOptions = {}): Prom
 
   let fingerprintJob: Promise<SignalResult<FingerprintData>> | null = null;
   if (input.type === "website" && input.url) {
+    jobs.push(track(checkRedirectChain(input.url)));
     fingerprintJob = track(fingerprintSite(input.url));
     jobs.push(fingerprintJob);
   }

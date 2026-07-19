@@ -46,6 +46,18 @@ single source decides the score.
       any report; hidden entirely when caching is off
 - [x] UI niceties — score count-up animation (reduced-motion aware), per-signal durations
       in the results list, `/` focuses the scanner input from anywhere
+- [x] **Redirect & link-shortener signal** — follows the address's redirect chain without
+      executing the page; flags URL shorteners (bit.ly & co.), silent cross-domain hops,
+      and unusually long chains — plain `fetch`, zero API
+- [x] **Watchlist** — "[ watch ]" any result; targets live in `localStorage` only (no
+      accounts, nothing leaves the browser) and show on the home page with their last
+      score and a one-click force rescan
+- [x] **Copy verdict as text** — a chat-ready plain-text summary (verdict, score,
+      top findings, report link) for pasting into a group chat before someone pays
+- [x] **/about** — methodology page: all nine signals explained, score bands, an *honest
+      limitations* section, and free-API quick docs with a curl example
+- [x] App identity — terminal-reticle SVG favicon, PWA manifest, `robots.txt` +
+      `sitemap.xml`, theme color; plus a once-per-session boot line on the home page
 
 Every module degrades gracefully: if a data source fails or is unreachable,
 the scan still completes with a lower-confidence score instead of crashing.
@@ -104,6 +116,7 @@ it if you hit `Cannot find module './NNN.js'`.
 | Site fingerprinting   | Playwright (headless Chromium)     | free/OSS           |
 | Review sentiment      | `sentiment` (AFINN wordlist)       | free/OSS, no key   |
 | Brand impersonation   | local heuristics (Levenshtein + homoglyph fold) | free, no key |
+| Redirect analysis     | plain `fetch` with manual redirects | free, no key      |
 | Social share cards    | `next/og` (bundled with Next.js)   | free/OSS           |
 | Scam-report check     | curated JSON list + moderated user reports | free (stub) |
 | LLM synthesis         | Ollama (local) or rule-based       | free/OSS           |
@@ -147,6 +160,8 @@ src/
     history/page.tsx            # recent scans + search/verdict filter (server component)
     compare/page.tsx            # side-by-side comparison (2-3 targets)
     stats/page.tsx              # public dashboard: verdict distribution, histogram, watchlist
+    about/page.tsx              # methodology: signals, score bands, limitations, API docs
+    icon.svg / manifest.ts / robots.ts / sitemap.ts  # favicon, PWA manifest, SEO plumbing
     report/[id]/page.tsx        # shareable permalink; ?print=1 renders PrintableReport
     report/[id]/opengraph-image.tsx  # dynamic OG share card (next/og)
     admin/page.tsx              # scam-report moderation queue (password-gated)
@@ -165,6 +180,7 @@ src/
     Panel.tsx                    # the one place the HUD-panel look is defined
     Header.tsx                   # terminal titlebar nav
     RecentScans.tsx              # home-page latest-scans strip (renders nothing w/o cache)
+    WatchlistPanel.tsx           # localStorage watchlist panel (see lib/watchlist.ts)
     ResultsView.tsx               # score card, breakdown chart, signals, copy-link, badge, report form
     ScoreBreakdownChart.tsx      # status-composition bar (see Design above)
     PrintableReport.tsx          # light print/PDF document (distinct from the screen theme)
@@ -179,6 +195,7 @@ src/
       fingerprint.ts            # step 4: Playwright site fingerprinting + homepage screenshot
       contactConsistency.ts     # step 5: email-domain vs site-domain check
       lookalike.ts              # brand impersonation: typosquat/homoglyph/bait/TLD heuristics
+      redirects.ts              # redirect-chain / URL-shortener analysis
       reviewSentiment.ts        # step 6: sentiment + uniform-rating detection
       reviewSource.ts           # swappable mock review data source
       scamReports.ts            # step 7: curated blocklist + moderated user reports

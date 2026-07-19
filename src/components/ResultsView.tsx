@@ -5,6 +5,7 @@ import type { ScanResult } from "@/lib/scan";
 import type { SignalResult, SignalStatus } from "@/lib/signals/types";
 import type { RiskBand } from "@/lib/score/provisional";
 import { MODULES } from "@/lib/modules-manifest";
+import { isWatched, toggleWatch } from "@/lib/watchlist";
 import { ScoreBreakdownChart } from "./ScoreBreakdownChart";
 import { Panel } from "./Panel";
 
@@ -143,6 +144,8 @@ export function ResultsView({
         <div className="mt-4 flex flex-wrap gap-2">
           {result.cached && <RescanButton raw={input.raw} onRescan={onRescan} />}
           {result.id && <CopyLinkButton id={result.id} />}
+          <CopyVerdictButton result={result} />
+          <WatchButton result={result} />
           {result.id && <BadgeEmbedButton normalizedKey={input.normalized} id={result.id} />}
           <ReportScamButton input={input} />
         </div>
@@ -282,6 +285,63 @@ function RescanButton({ raw, onRescan }: { raw: string; onRescan?: () => void })
   return (
     <TerminalButton onClick={rescan} tone="sky">
       [ rescan fresh ↻ ]
+    </TerminalButton>
+  );
+}
+
+function WatchButton({ result }: { result: ScanResult }) {
+  const [watched, setWatched] = useState(false);
+  useEffect(() => {
+    setWatched(isWatched(result.input.normalized));
+  }, [result.input.normalized]);
+
+  function toggle() {
+    setWatched(
+      toggleWatch({
+        raw: result.input.raw,
+        key: result.input.normalized,
+        score: result.score.trust_score,
+        band: result.score.risk_band,
+        scanned_at: result.scanned_at,
+      }),
+    );
+  }
+
+  return (
+    <TerminalButton onClick={toggle}>
+      {watched ? "[ watching ✓ ]" : "[ watch ]"}
+    </TerminalButton>
+  );
+}
+
+function CopyVerdictButton({ result }: { result: ScanResult }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    const { score, input } = result;
+    const lines = [
+      `CredCheck scan — ${input.normalized}`,
+      `Verdict: ${BAND_UI[score.risk_band].label} — ${score.trust_score}/100 (confidence ${Math.round(score.confidence * 100)}%)`,
+      "",
+      ...score.explanation_bullets
+        .slice(0, 6)
+        .map((b) => (/^[✓⚠·✗-]/.test(b) ? b : `- ${b}`)),
+    ];
+    if (result.id) lines.push("", `Full report: ${window.location.origin}/report/${result.id}`);
+    lines.push("", "Informational only — not a guarantee or a verdict on any seller.");
+    const text = lines.join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("Copy this summary:", text);
+    }
+  }
+
+  return (
+    <TerminalButton onClick={copy}>
+      {copied ? "[ summary copied ]" : "[ copy as text ]"}
     </TerminalButton>
   );
 }
