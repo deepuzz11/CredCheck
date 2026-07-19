@@ -7,6 +7,7 @@ import type { RiskBand } from "@/lib/score/provisional";
 import { MODULES } from "@/lib/modules-manifest";
 import { isWatched, toggleWatch } from "@/lib/watchlist";
 import { ScoreBreakdownChart } from "./ScoreBreakdownChart";
+import { TrendSparkline } from "./TrendSparkline";
 import { Panel } from "./Panel";
 
 const BAND_UI: Record<
@@ -65,36 +66,6 @@ function DeltaChip({
       Δ {sign}
       {delta} vs {relativeAge(since)}
     </span>
-  );
-}
-
-/** Tiny single-series line of past trust scores (oldest → newest). Fixed
- *  0–100 domain so the same shape always means the same movement. */
-function TrendSparkline({ trend }: { trend: number[] }) {
-  const W = 96;
-  const H = 22;
-  const PAD = 2;
-  const step = (W - PAD * 2) / (trend.length - 1);
-  const y = (v: number) => PAD + (1 - v / 100) * (H - PAD * 2);
-  const points = trend.map((v, i) => `${PAD + i * step},${y(v).toFixed(1)}`).join(" ");
-  const last = trend[trend.length - 1];
-  return (
-    <svg
-      width={W}
-      height={H}
-      viewBox={`0 0 ${W} ${H}`}
-      role="img"
-      aria-label={`Trust score over the last ${trend.length} scans: ${trend.join(", ")}`}
-      className="shrink-0 text-emerald-400/80"
-    >
-      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <circle
-        cx={PAD + (trend.length - 1) * step}
-        cy={y(last)}
-        r="2"
-        fill="currentColor"
-      />
-    </svg>
   );
 }
 

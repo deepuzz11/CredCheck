@@ -1,5 +1,7 @@
 # CredCheck — Can I Trust This Seller?
 
+[![CI](https://github.com/deepuzz11/CredCheck/actions/workflows/ci.yml/badge.svg)](https://github.com/deepuzz11/CredCheck/actions/workflows/ci.yml)
+
 A multi-signal trust-scoring tool for online sellers (websites, Instagram
 handles, marketplace listings). Paste a target and get a 0–100 trust score with
 a plain-English explanation built from **several independent signals** — no
@@ -66,8 +68,12 @@ single source decides the score.
       linking to its methodology on `/about`, and themed 404 / error pages
 - [x] **Score history over time** — every scan (including rescans) appends a slim
       `ScanHistory` row; the verdict card shows a **trend sparkline** (last 12 scans)
-      and a **Δ delta chip** vs the previous scan ("Δ +12 vs 2d ago"), and `/stats`
-      gains a scans-per-day activity chart
+      and a **Δ delta chip** vs the previous scan ("Δ +12 vs 2d ago"), `/history` rows
+      get mini sparklines, and `/stats` gains a scans-per-day activity chart
+- [x] **Unit tests + CI** — `npm test` (node:test via tsx): 43 tests over input
+      detection, the brand-impersonation heuristics (including the false-positive
+      guards), the rule-based scorer, and the LLM output schema; GitHub Actions runs
+      typecheck → tests → production build on every push/PR
 
 Every module degrades gracefully: if a data source fails or is unreachable,
 the scan still completes with a lower-confidence score instead of crashing.
@@ -236,6 +242,8 @@ src/
     scan.ts                      # orchestrator: runs signals in parallel, then synthesizes
     modules-manifest.ts          # which modules exist + what input types they apply to
 prisma/schema.prisma            # ScanCache + ScanHistory + ScamReport (with moderation) models
+tests/                          # unit tests (node:test) — npm test; run in CI on every push
+.github/workflows/ci.yml        # typecheck → tests → build
 docker-compose.yml              # local Postgres for development
 ```
 

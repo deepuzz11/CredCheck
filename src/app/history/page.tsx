@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import type { ScanResult } from "@/lib/scan";
 import { Panel } from "@/components/Panel";
+import { TrendSparkline } from "@/components/TrendSparkline";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Scan history — CredCheck" };
@@ -162,6 +163,11 @@ export default async function HistoryPage({
                       {expired && " · expired"}
                     </span>
                   </span>
+                  {Array.isArray(result?.trend) && result.trend.length >= 2 && (
+                    <span className="hidden shrink-0 sm:inline-flex" title="score trend">
+                      <TrendSparkline trend={result.trend} width={64} height={18} />
+                    </span>
+                  )}
                   {typeof trustScore === "number" && !expired && (
                     <span className="shrink-0 border border-emerald-400/20 px-2.5 py-1 text-xs tabular-nums text-emerald-300">
                       {trustScore}/100
