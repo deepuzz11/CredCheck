@@ -19,9 +19,16 @@ export interface FingerprintData {
   has_phone_number: boolean;
   contact_email: string | null;
   page_title: string | null;
+  /** JPEG thumbnail of the homepage as a data URL. The scan orchestrator
+   *  lifts this out of signal data (→ ScanResult.screenshot_data_url) before
+   *  synthesis so the LLM prompt / JSON detail view never carry the blob. */
+  screenshot_data_url?: string | null;
 }
 
 const NAV_TIMEOUT_MS = 15000;
+/** Screenshots above this base64 length (~190KB) are dropped, not stored —
+ *  they live inside the cached result JSON, so size discipline matters. */
+const MAX_SCREENSHOT_B64 = 260_000;
 
 const PRIVACY_RE = /privacy\s*(policy|notice)/i;
 const REFUND_RE = /(refund|return)s?\s*(policy|&\s*exchange|and\s*exchange)?|exchange\s*policy/i;
@@ -41,10 +48,24 @@ export async function fingerprintSite(url: string): Promise<SignalResult<Fingerp
         const page = await browser.newPage({
           userAgent:
             "Mozilla/5.0 (compatible; CredCheckBot/0.1; +https://github.com/) trust-scoring research tool",
+          viewport: { width: 1024, height: 640 },
         });
         page.setDefaultTimeout(NAV_TIMEOUT_MS);
 
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
+
+        // Visual evidence for the report: what the page actually looked like
+        // at scan time. Best-effort — a hung renderer must not sink the whole
+        // fingerprint, hence its own timeout + catch.
+        const screenshot = await page
+          .screenshot({ type: "jpeg", quality: 45, timeout: 5000 })
+          .then((buf) => {
+            const b64 = buf.toString("base64");
+            return b64.length <= MAX_SCREENSHOT_B64
+              ? `data:image/jpeg;base64,${b64}`
+              : null;
+          })
+          .catch(() => null);
 
         const title = await page.title().catch(() => null);
         const bodyText = await page.innerText("body").catch(() => "");
@@ -83,6 +104,7 @@ export async function fingerprintSite(url: string): Promise<SignalResult<Fingerp
           has_phone_number: hasPhone,
           contact_email: contactEmail,
           page_title: title,
+          screenshot_data_url: screenshot,
         };
 
         const missing: string[] = [];

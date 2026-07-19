@@ -6,6 +6,7 @@ import { fingerprintSite, type FingerprintData } from "@/lib/signals/fingerprint
 import { checkContactConsistency } from "@/lib/signals/contactConsistency";
 import { checkReviewSentiment } from "@/lib/signals/reviewSentiment";
 import { checkScamReports } from "@/lib/signals/scamReports";
+import { checkLookalikeDomain, checkLookalikeHandle } from "@/lib/signals/lookalike";
 import type { SignalResult } from "@/lib/signals/types";
 import type { ScoreResult } from "@/lib/score/provisional";
 import { synthesizeScore } from "@/lib/llm/synthesize";
@@ -16,6 +17,10 @@ import { synthesizeScore } from "@/lib/llm/synthesize";
  * result so it runs once that settles. `runSignal` (in each module) means
  * none of these promises reject, so `Promise.all` can never throw here —
  * one dead source can never crash the scan.
+ *
+ * Callers that want live progress (the /api/scan/stream route) pass
+ * `onEvent`; it fires as each signal settles and when synthesis starts.
+ * Plain `runScan(input)` behaves exactly as before.
  */
 
 export interface ScanResult {
@@ -23,37 +28,65 @@ export interface ScanResult {
   scanned_at: string;
   signals: SignalResult[];
   score: ScoreResult;
+  /** JPEG thumbnail of the homepage at scan time (websites only) — lifted out
+   *  of the fingerprint signal so the LLM prompt never carries the blob */
+  screenshot_data_url?: string | null;
   /** true when served from the 48h cache instead of freshly scanned */
   cached: boolean;
   /** cache row id — present only when caching is enabled; powers /report/[id] permalinks */
   id?: string;
 }
 
-export async function runScan(rawInput: string): Promise<ScanResult> {
+export type ScanProgressEvent =
+  | { type: "signal"; result: SignalResult }
+  | { type: "phase"; phase: "synthesizing" };
+
+export interface RunScanOptions {
+  onEvent?: (event: ScanProgressEvent) => void;
+}
+
+export async function runScan(rawInput: string, opts: RunScanOptions = {}): Promise<ScanResult> {
   const input = detectAndNormalize(rawInput);
+  const emit = opts.onEvent ?? (() => {});
+
+  // Emits a progress event the moment a signal settles, without changing
+  // the promise's value — the parallel structure stays exactly as it was.
+  const track = <T extends SignalResult>(job: Promise<T>): Promise<T> =>
+    job.then((result) => {
+      emit({ type: "signal", result });
+      return result;
+    });
 
   const jobs: Promise<SignalResult>[] = [];
 
   if (input.domain) {
-    jobs.push(checkDomainAge(input.domain));
-    jobs.push(checkSslCertificate(input.domain));
-    jobs.push(checkDnsHealth(input.domain));
+    jobs.push(track(checkDomainAge(input.domain)));
+    jobs.push(track(checkSslCertificate(input.domain)));
+    jobs.push(track(checkDnsHealth(input.domain)));
+  }
+
+  if (input.type === "website" && input.domain) {
+    jobs.push(track(checkLookalikeDomain(input.domain)));
+  } else if (input.type === "instagram" && input.handle) {
+    jobs.push(track(checkLookalikeHandle(input.handle)));
   }
 
   let fingerprintJob: Promise<SignalResult<FingerprintData>> | null = null;
   if (input.type === "website" && input.url) {
-    fingerprintJob = fingerprintSite(input.url);
+    fingerprintJob = track(fingerprintSite(input.url));
     jobs.push(fingerprintJob);
   }
 
   jobs.push(
-    checkReviewSentiment({
-      normalizedKey: input.normalized,
-      domain: input.domain,
-      handle: input.handle,
-    }),
+    track(
+      checkReviewSentiment({
+        normalizedKey: input.normalized,
+        domain: input.domain,
+        handle: input.handle,
+      }),
+    ),
   );
-  jobs.push(checkScamReports({ domain: input.domain, handle: input.handle }));
+  jobs.push(track(checkScamReports({ domain: input.domain, handle: input.handle })));
 
   const signals = await Promise.all(jobs);
 
@@ -62,8 +95,20 @@ export async function runScan(rawInput: string): Promise<ScanResult> {
   if (fingerprintJob && input.domain) {
     const fpResult = await fingerprintJob;
     const fpData = fpResult.status === "unavailable" ? null : fpResult.data;
-    signals.push(await checkContactConsistency(input.domain, fpData));
+    signals.push(await track(checkContactConsistency(input.domain, fpData)));
   }
+
+  // Lift the screenshot blob out of the fingerprint signal before synthesis:
+  // the LLM prompt serializes signal data verbatim, and a ~100KB base64
+  // string in the prompt would be pure noise (and cost).
+  let screenshot: string | null = null;
+  const fp = signals.find((s) => s.signal_name === "site_fingerprint");
+  if (fp?.data && typeof fp.data.screenshot_data_url === "string") {
+    screenshot = fp.data.screenshot_data_url;
+    delete fp.data.screenshot_data_url;
+  }
+
+  emit({ type: "phase", phase: "synthesizing" });
 
   const score = await synthesizeScore({
     inputType: input.type,
@@ -76,6 +121,7 @@ export async function runScan(rawInput: string): Promise<ScanResult> {
     scanned_at: new Date().toISOString(),
     signals,
     score,
+    screenshot_data_url: screenshot,
     cached: false,
   };
 }

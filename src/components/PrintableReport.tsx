@@ -104,6 +104,20 @@ export function PrintableReport({ result }: { result: ScanResult }) {
           </tbody>
         </table>
 
+        {result.screenshot_data_url && (
+          <div style={{ marginTop: 32 }}>
+            <h2 style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Homepage at scan time
+            </h2>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={result.screenshot_data_url}
+              alt={`Homepage of ${input.normalized} at scan time`}
+              style={{ width: "100%", marginTop: 8, border: "1px solid #ccc" }}
+            />
+          </div>
+        )}
+
         <div style={{ marginTop: 32 }}>
           <h2 style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
             What we found

@@ -1,14 +1,18 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { ScanResult } from "@/lib/scan";
+import type { SignalResult } from "@/lib/signals/types";
 import { MODULES } from "@/lib/modules-manifest";
 import { detectAndNormalize, type InputType } from "@/lib/input/detect";
 import { ResultsView } from "@/components/ResultsView";
+import { RecentScans } from "@/components/RecentScans";
 import { Panel } from "@/components/Panel";
 
 const EXAMPLES = ["example.com", "@nike", "amazon.com/dp/B08N5WRWNW"];
+
+type ScanPhase = "signals" | "synthesizing";
 
 export default function Home() {
   return (
@@ -20,9 +24,12 @@ export default function Home() {
 
 function ScanApp() {
   const searchParams = useSearchParams();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingType, setLoadingType] = useState<InputType | null>(null);
+  const [live, setLive] = useState<Record<string, SignalResult>>({});
+  const [phase, setPhase] = useState<ScanPhase>("signals");
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,11 +42,26 @@ function ScanApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Terminal affordance: "/" jumps to the prompt from anywhere on the page.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
+      e.preventDefault();
+      inputRef.current?.focus();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   async function runScan(value: string, opts?: { force?: boolean }) {
     const trimmed = value.trim();
     if (!trimmed) return;
     setError(null);
     setResult(null);
+    setLive({});
+    setPhase("signals");
 
     // Reuse the same detector the server uses, purely to know which checks
     // to show as "running" and to fail fast on obviously bad input.
@@ -54,14 +76,50 @@ function ScanApp() {
     setLoadingType(detected);
     setLoading(true);
     try {
-      const res = await fetch("/api/scan", {
+      const res = await fetch("/api/scan/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input: trimmed, force: opts?.force ?? false }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Scan failed.");
-      setResult(json as ScanResult);
+      if (!res.ok || !res.body) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(
+          (json as { error?: string }).error ?? "Scan failed.",
+        );
+      }
+
+      // The response is NDJSON — parse each line as it arrives so every
+      // signal flips its row live the moment it settles server-side.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalResult: ScanResult | null = null;
+      for (;;) {
+        const { done, value: chunk } = await reader.read();
+        buffer += decoder.decode(chunk, { stream: !done });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const ev = JSON.parse(line) as
+            | { type: "signal"; result: SignalResult }
+            | { type: "phase"; phase: ScanPhase }
+            | { type: "done"; result: ScanResult }
+            | { type: "error"; message: string };
+          if (ev.type === "signal") {
+            setLive((m) => ({ ...m, [ev.result.signal_name]: ev.result }));
+          } else if (ev.type === "phase") {
+            setPhase(ev.phase);
+          } else if (ev.type === "done") {
+            finalResult = ev.result;
+          } else {
+            throw new Error(ev.message);
+          }
+        }
+        if (done) break;
+      }
+      if (!finalResult) throw new Error("The scan stream ended unexpectedly.");
+      setResult(finalResult);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
@@ -103,6 +161,7 @@ function ScanApp() {
               </span>
               <input
                 id="target"
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="example.com, @handle, or a marketplace link…"
@@ -110,6 +169,12 @@ function ScanApp() {
                 spellCheck={false}
                 className="w-full bg-transparent text-sm text-emerald-100 outline-none placeholder:text-emerald-100/25"
               />
+              <kbd
+                className="hidden shrink-0 border border-emerald-400/20 px-1.5 py-0.5 text-[10px] text-emerald-100/30 sm:block"
+                title='Press "/" to focus'
+              >
+                /
+              </kbd>
             </div>
             <button
               type="submit"
@@ -144,7 +209,9 @@ function ScanApp() {
         </div>
       )}
 
-      {loading && loadingType && <LoadingChecks type={loadingType} input={input} />}
+      {loading && loadingType && (
+        <LiveChecks type={loadingType} input={input} live={live} phase={phase} />
+      )}
 
       {result && !loading && (
         <div className="mt-6">
@@ -154,6 +221,8 @@ function ScanApp() {
           />
         </div>
       )}
+
+      {!loading && !result && <RecentScans />}
 
       <footer className="mt-10">
         <Panel className="px-4 py-3 text-center text-xs leading-relaxed text-emerald-100/40">
@@ -167,36 +236,94 @@ function ScanApp() {
   );
 }
 
-function LoadingChecks({ type, input }: { type: InputType; input: string }) {
-  const applicable = MODULES.filter((m) => m.appliesTo.includes(type));
-  const built = applicable.filter((m) => m.built);
-  const pending = applicable.filter((m) => !m.built);
+const STATUS_TAG: Record<SignalResult["status"], { tag: string; cls: string }> = {
+  ok: { tag: "[OK]", cls: "text-emerald-400" },
+  flag: { tag: "[!!]", cls: "text-amber-400" },
+  unavailable: { tag: "[--]", cls: "text-emerald-100/30" },
+};
+
+function LiveChecks({
+  type,
+  input,
+  live,
+  phase,
+}: {
+  type: InputType;
+  input: string;
+  live: Record<string, SignalResult>;
+  phase: ScanPhase;
+}) {
+  const applicable = MODULES.filter((m) => m.appliesTo.includes(type) && m.built);
+  const checks = applicable.filter((m) => m.key !== "llm_synthesis");
+  const doneCount = checks.filter((m) => live[m.key]).length;
+
   return (
-    <Panel label="status" className="mt-6 overflow-hidden p-5">
+    <Panel label="status" className="mt-6 p-5">
       <div className="relative mb-4 h-px w-full overflow-hidden bg-emerald-400/10">
         <div className="animate-scan-sweep absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-emerald-400 to-transparent" />
       </div>
-      <p className="mb-1 text-xs text-emerald-100/50">
-        &gt; target: <span className="text-emerald-300">{input}</span>
-      </p>
+      <div className="mb-1 flex items-baseline justify-between gap-3">
+        <p className="text-xs text-emerald-100/50">
+          &gt; target: <span className="text-emerald-300">{input}</span>
+        </p>
+        <ElapsedTimer />
+      </div>
       <p className="mb-4 text-xs text-emerald-100/50">
-        &gt; detected: <span className="text-emerald-300">{type}</span> — running checks...
+        &gt; detected: <span className="text-emerald-300">{type}</span> — {doneCount}/
+        {checks.length} checks complete
       </p>
       <ul className="space-y-2 text-sm">
-        {built.map((m) => (
-          <li key={m.key} className="flex items-center gap-3 text-emerald-100/80">
-            <Spinner /> <span>{m.label}</span>
-          </li>
-        ))}
-        {pending.map((m) => (
-          <li key={m.key} className="flex items-center gap-3 text-emerald-100/25">
-            <span className="h-3 w-3 border border-dashed border-current" />
-            <span>{m.label}</span>
-            <span className="ml-auto text-xs">[pending]</span>
-          </li>
-        ))}
+        {checks.map((m) => {
+          const settled = live[m.key];
+          if (!settled) {
+            return (
+              <li key={m.key} className="flex items-center gap-3 text-emerald-100/80">
+                <Spinner /> <span>{m.label}</span>
+              </li>
+            );
+          }
+          const ui = STATUS_TAG[settled.status];
+          return (
+            <li key={m.key} className="flex items-baseline gap-3">
+              <span className={`shrink-0 text-xs font-bold ${ui.cls}`}>{ui.tag}</span>
+              <span className="text-emerald-100/90">{m.label}</span>
+              {typeof settled.duration_ms === "number" && (
+                <span className="ml-auto shrink-0 text-[10px] tabular-nums text-emerald-100/30">
+                  {(settled.duration_ms / 1000).toFixed(2)}s
+                </span>
+              )}
+            </li>
+          );
+        })}
+        <li
+          className={`flex items-center gap-3 ${
+            phase === "synthesizing" ? "text-emerald-100/80" : "text-emerald-100/30"
+          }`}
+        >
+          {phase === "synthesizing" ? (
+            <Spinner />
+          ) : (
+            <span className="h-3 w-3 shrink-0 border border-dashed border-current" />
+          )}
+          <span>AI synthesis</span>
+          {phase !== "synthesizing" && <span className="ml-auto text-xs">[queued]</span>}
+        </li>
       </ul>
     </Panel>
+  );
+}
+
+function ElapsedTimer() {
+  const [tenths, setTenths] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const t = setInterval(() => setTenths(Math.floor((Date.now() - started) / 100)), 100);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <span className="text-[10px] tabular-nums text-emerald-100/30">
+      t+{(tenths / 10).toFixed(1)}s
+    </span>
   );
 }
 

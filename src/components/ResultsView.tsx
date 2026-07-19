@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ScanResult } from "@/lib/scan";
 import type { SignalResult, SignalStatus } from "@/lib/signals/types";
 import type { RiskBand } from "@/lib/score/provisional";
@@ -38,6 +38,29 @@ const STATUS_UI: Record<SignalStatus, { tag: string; text: string }> = {
   unavailable: { tag: "[--]", text: "text-emerald-100/30" },
 };
 
+/** Counts 0 → target with an ease-out curve, giving the score reveal a
+ *  spin-up feel. Skipped entirely for prefers-reduced-motion users. */
+function useCountUp(target: number, durationMs = 900): number {
+  const [value, setValue] = useState(0);
+  const raf = useRef<number>(0);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setValue(target);
+      return;
+    }
+    const started = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - started) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setValue(Math.round(target * eased));
+      if (t < 1) raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
+  }, [target, durationMs]);
+  return value;
+}
+
 export function ResultsView({
   result,
   onRescan,
@@ -49,6 +72,7 @@ export function ResultsView({
 }) {
   const { score, input, signals } = result;
   const ui = BAND_UI[score.risk_band];
+  const displayScore = useCountUp(score.trust_score);
 
   const notChecked = useMemo(() => {
     const done = new Set(signals.map((s) => s.signal_name));
@@ -66,7 +90,7 @@ export function ResultsView({
             className={`relative flex h-24 w-24 shrink-0 flex-col items-center justify-center border-2 bg-black/40 ${ui.border}`}
           >
             <span className={`text-3xl font-bold tabular-nums ${ui.text} ${ui.glow}`}>
-              {score.trust_score}
+              {displayScore}
             </span>
             <span className="text-[10px] text-emerald-100/40">/ 100</span>
           </div>
@@ -123,6 +147,21 @@ export function ResultsView({
           <ReportScamButton input={input} />
         </div>
       </Panel>
+
+      {/* Homepage capture — visual evidence of what the page looked like */}
+      {result.screenshot_data_url && (
+        <Panel label="capture" className="p-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={result.screenshot_data_url}
+            alt={`Homepage of ${input.normalized} at scan time`}
+            className="w-full border border-emerald-400/15"
+          />
+          <p className="mt-2 text-[10px] text-emerald-100/40">
+            &gt; homepage as our scanner saw it · {new Date(result.scanned_at).toLocaleString()}
+          </p>
+        </Panel>
+      )}
 
       {/* Explanation */}
       <Panel label="findings" className="p-6">
@@ -181,7 +220,14 @@ function SignalRow({ signal }: { signal: SignalResult }) {
             <span className="text-emerald-100">{signal.label}</span>
             <span className="mt-0.5 block text-xs text-emerald-100/40">{signal.notes}</span>
           </span>
-          {hasData && <span className="shrink-0 text-xs text-emerald-100/30">[details]</span>}
+          <span className="flex shrink-0 items-baseline gap-2">
+            {typeof signal.duration_ms === "number" && (
+              <span className="text-[10px] tabular-nums text-emerald-100/25">
+                {(signal.duration_ms / 1000).toFixed(2)}s
+              </span>
+            )}
+            {hasData && <span className="text-xs text-emerald-100/30">[details]</span>}
+          </span>
         </summary>
         {hasData && (
           <pre className="mt-2 overflow-x-auto border border-emerald-400/10 bg-black/60 p-2 text-[11px] leading-relaxed text-emerald-300/80">

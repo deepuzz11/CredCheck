@@ -17,9 +17,27 @@ export async function generateMetadata({
   const { id } = await params;
   const row = await loadReport(id);
   if (!row) return { title: "Report not found — CredCheck" };
+  const result = row.resultJson as unknown as ScanResult;
+  const score = result.score?.trust_score;
+  const band = result.score?.risk_band;
+  const bandLabel =
+    band === "trusted" ? "Likely legitimate" : band === "high" ? "High risk" : "Caution advised";
+  const description =
+    typeof score === "number"
+      ? `${bandLabel} — trust score ${score}/100 from ${result.signals?.length ?? "multiple"} independent signals. Informational only.`
+      : "A shared trust-scan result from CredCheck.";
   return {
     title: `${row.normalizedKey} — CredCheck report`,
-    description: "A shared trust-scan result from CredCheck.",
+    description,
+    openGraph: {
+      title: `${row.normalizedKey} — CredCheck trust report`,
+      description,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${row.normalizedKey} — CredCheck trust report`,
+      description,
+    },
   };
 }
 

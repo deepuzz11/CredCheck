@@ -29,6 +29,23 @@ single source decides the score.
 - [x] Force rescan — `force: true` on `/api/scan` bypasses the 48h cache; "[ rescan fresh ]" button on any cached result
 - [x] Raw JSON export — `/api/report/[id]/json`, next to the PDF download
 - [x] History search & verdict filter — `/history?q=…&band=…` (works without JS)
+- [x] **Live streaming scans** — `POST /api/scan/stream` returns NDJSON events as each
+      signal settles; the UI checklist flips `[OK]/[!!]/[--]` in real time with per-check
+      timings, an elapsed counter, and a queued→running AI-synthesis row
+- [x] **Brand impersonation signal** — typosquats (`amazonn`), homoglyphs (`amaz0n`, `n1ke`),
+      brand-plus-bait compounds (`paypal-verify`, `@nike_outlet_sale`), exact-name-on-cheap-TLD
+      (`amazon.shop`), and high-abuse free TLDs — 55-brand list, all local, zero API
+- [x] **Homepage screenshot capture** — the fingerprint step saves a JPEG thumbnail of what
+      the page actually looked like at scan time; shown in the report UI and the PDF
+      (visual evidence for disputes), stripped from the LLM prompt
+- [x] **Public stats dashboard** — `/stats`: scans cached, average score, verdict
+      distribution bar, trust-score histogram, lowest-score watchlist, latest scans
+- [x] **Social share cards** — every `/report/[id]` permalink serves a dynamic OG image
+      (score + verdict card via `next/og`), so pasted links unfurl in chat/social
+- [x] **Recent-activity strip** — latest community scans on the home page, one click to
+      any report; hidden entirely when caching is off
+- [x] UI niceties — score count-up animation (reduced-motion aware), per-signal durations
+      in the results list, `/` focuses the scanner input from anywhere
 
 Every module degrades gracefully: if a data source fails or is unreachable,
 the scan still completes with a lower-confidence score instead of crashing.
@@ -86,6 +103,8 @@ it if you hit `Cannot find module './NNN.js'`.
 | Email/DNS setup       | Node `dns` (MX/SPF/DMARC/NS)       | free, no key       |
 | Site fingerprinting   | Playwright (headless Chromium)     | free/OSS           |
 | Review sentiment      | `sentiment` (AFINN wordlist)       | free/OSS, no key   |
+| Brand impersonation   | local heuristics (Levenshtein + homoglyph fold) | free, no key |
+| Social share cards    | `next/og` (bundled with Next.js)   | free/OSS           |
 | Scam-report check     | curated JSON list + moderated user reports | free (stub) |
 | LLM synthesis         | Ollama (local) or rule-based       | free/OSS           |
 | Trust badge           | hand-rolled SVG (no image lib)     | free/OSS           |
@@ -124,13 +143,17 @@ terminal — screen experience and document deliverable are different mediums.
 ```
 src/
   app/
-    page.tsx                    # input UI + live checklist + results view
+    page.tsx                    # input UI + real-time streaming checklist + results view
     history/page.tsx            # recent scans + search/verdict filter (server component)
     compare/page.tsx            # side-by-side comparison (2-3 targets)
+    stats/page.tsx              # public dashboard: verdict distribution, histogram, watchlist
     report/[id]/page.tsx        # shareable permalink; ?print=1 renders PrintableReport
+    report/[id]/opengraph-image.tsx  # dynamic OG share card (next/og)
     admin/page.tsx              # scam-report moderation queue (password-gated)
     api/
       scan/route.ts             # POST /api/scan — rate limit, cache (bypassable via force:true), orchestrate
+      scan/stream/route.ts      # POST /api/scan/stream — same scan, NDJSON progress events
+      recent/route.ts           # GET /api/recent — chip-sized latest scans for the home strip
       report/route.ts           # POST /api/report — submit a crowd-sourced scam report
       badge/route.ts            # GET /api/badge?key=… — dynamic SVG trust badge
       report/[id]/pdf/route.ts  # GET — renders ?print=1 with Playwright, returns a PDF
@@ -141,6 +164,7 @@ src/
   components/
     Panel.tsx                    # the one place the HUD-panel look is defined
     Header.tsx                   # terminal titlebar nav
+    RecentScans.tsx              # home-page latest-scans strip (renders nothing w/o cache)
     ResultsView.tsx               # score card, breakdown chart, signals, copy-link, badge, report form
     ScoreBreakdownChart.tsx      # status-composition bar (see Design above)
     PrintableReport.tsx          # light print/PDF document (distinct from the screen theme)
@@ -152,8 +176,9 @@ src/
       whois.ts                  # step 2: domain age + WHOIS
       ssl.ts                    # step 3: SSL cert (tls handshake + crt.sh)
       dnsHealth.ts              # email & DNS setup (MX / SPF / DMARC / NS)
-      fingerprint.ts            # step 4: Playwright site fingerprinting
+      fingerprint.ts            # step 4: Playwright site fingerprinting + homepage screenshot
       contactConsistency.ts     # step 5: email-domain vs site-domain check
+      lookalike.ts              # brand impersonation: typosquat/homoglyph/bait/TLD heuristics
       reviewSentiment.ts        # step 6: sentiment + uniform-rating detection
       reviewSource.ts           # swappable mock review data source
       scamReports.ts            # step 7: curated blocklist + moderated user reports
@@ -196,6 +221,22 @@ and to lower `confidence` when fewer signals are usable. Any failure — unreach
 Ollama, missing Anthropic key, a malformed response — falls back to the
 deterministic rule-based scorer with a note explaining why, rather than failing
 the scan.
+
+### Streaming scan API
+
+`POST /api/scan/stream` takes the same body as `/api/scan` (`{ input, force? }`)
+but responds with newline-delimited JSON the moment things happen, which is what
+drives the real-time checklist on the home page:
+
+```
+{"type":"signal","result":{ …SignalResult }}   ← one line per settled signal
+{"type":"phase","phase":"synthesizing"}        ← all signals in, scoring started
+{"type":"done","result":{ …ScanResult }}       ← always the last line
+{"type":"error","message":"…"}                 ← terminal, replaces "done"
+```
+
+Cached hits skip straight to `done`. Bad input is still an ordinary 400 before
+any streaming starts, and both endpoints share one per-IP rate-limit bucket.
 
 ### Caching, permalinks, history, badges & rate limiting
 

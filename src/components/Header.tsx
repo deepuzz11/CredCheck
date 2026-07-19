@@ -17,7 +17,7 @@ export function Header() {
             credcheck<span className="text-emerald-400/50">://</span>scan
           </span>
         </Link>
-        <nav className="flex items-center gap-4 text-emerald-400/70">
+        <nav className="flex items-center gap-2.5 text-xs text-emerald-400/70 sm:gap-4 sm:text-sm">
           <Link href="/" className="transition hover:text-emerald-300">
             [ scan ]
           </Link>
@@ -26,6 +26,9 @@ export function Header() {
           </Link>
           <Link href="/compare" className="transition hover:text-emerald-300">
             [ compare ]
+          </Link>
+          <Link href="/stats" className="transition hover:text-emerald-300">
+            [ stats ]
           </Link>
         </nav>
       </div>
